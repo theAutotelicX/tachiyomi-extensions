@@ -23,6 +23,12 @@ class MangaReaderGenerator : ThemeSourceGenerator {
             isNsfw = true,
             overrideVersionCode = 1,
         ),
+        MultiLang(
+            name = "MangaMoons",
+            baseUrl = "https://manga-moons.net",
+            langs = listOf("th"),
+            isNsfw = true
+        ),
     )
 
     companion object {

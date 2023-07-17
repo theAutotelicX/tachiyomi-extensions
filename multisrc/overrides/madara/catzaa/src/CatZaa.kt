@@ -26,4 +26,9 @@ class CatZaa : Madara(
 
         return manga
     }
+
+    override fun popularMangaFromElement(element: Element) = parseMangaFromElement(element, false)
+
+    override fun searchMangaFromElement(element: Element) = parseMangaFromElement(element, true)
+    
 }

@@ -69,9 +69,9 @@ open class MangaMoons(
         return GET(urlBuilder.build(), headers)
     }
 
-    override fun searchMangaSelector() = ".listupd .limit"
+    override fun searchMangaSelector() = ".listupd .bsx a"
 
-    override fun searchMangaNextPageSelector() = ".page-link[title=Next]"
+    override fun searchMangaNextPageSelector() = ".hpage .r"
 
     override fun searchMangaFromElement(element: Element) =
         SManga.create().apply {
@@ -133,36 +133,33 @@ open class MangaMoons(
     override val chapterType get() = "chap"
     override val volumeType get() = "vol"
 
+    private val chapterListSelector = ".chbox .eph-num a"
+
     override fun chapterListRequest(mangaUrl: String, type: String): Request {
-        val id = mangaUrl.substringAfterLast('-')
-        return GET("$baseUrl/ajax/manga/reading-list/$id?readingBy=$type", headers)
+        return GET(mangaUrl, headers)
     }
 
     override fun parseChapterElements(response: Response, isVolume: Boolean): List<Element> {
-        val container = response.parseHtmlProperty().run {
-            val type = if (isVolume) "volumes" else "chapters"
-            selectFirst(Evaluator.Id("$lang-$type")) ?: return emptyList()
-        }
-        return container.children()
+        val document = response.asJsoup()
+        val chapterElements = document.select(chapterListSelector)
+        return chapterElements.subList(2, chapterElements.size)
     }
 
     override fun fetchPageList(chapter: SChapter): Observable<List<Page>> = Observable.fromCallable {
-        val typeAndId = chapter.url.substringAfterLast('#', "").ifEmpty {
-            val document = client.newCall(pageListRequest(chapter)).execute().asJsoup()
-            val wrapper = document.selectFirst(Evaluator.Id("wrapper"))!!
-            wrapper.attr("data-reading-by") + '/' + wrapper.attr("data-reading-id")
-        }
-        val ajaxUrl = "$baseUrl/ajax/image/list/$typeAndId?quality=${preferences.quality}"
-        client.newCall(GET(ajaxUrl, headers)).execute().let(::pageListParse)
+        val mangaUri = chapter.url.substringBefore('#')
+        client.newCall(GET("$baseUrl/$mangaUri", headers)).execute().let(::pageListParse)
     }
 
     override fun pageListParse(response: Response): List<Page> {
-        val pageDocument = response.parseHtmlProperty()
+        val pageDocument = response.asJsoup()
+        val readerAreaDiv: Element? = pageDocument.selectFirst("#readerarea")
 
-        return pageDocument.getElementsByClass("iv-card").mapIndexed { index, img ->
-            val url = img.attr("data-url")
-            val imageUrl = if (img.hasClass("shuffled")) "$url#${ImageInterceptor.SCRAMBLED}" else url
-            Page(index, imageUrl = imageUrl)
+        // Find all img tags within the "readerarea" div
+        val imageElements: List<Element> = readerAreaDiv?.select("img") ?: emptyList()
+
+        return imageElements.mapIndexed { index, img ->
+            val url = img.attr("src")
+            Page(index, imageUrl = url)
         }
     }
 
@@ -183,32 +180,4 @@ open class MangaMoons(
             SortFilter(),
             GenresFilter(),
         )
-
-    private fun Response.parseHtmlProperty(): Document {
-        val html = Json.parseToJsonElement(body.string()).jsonObject["html"]!!.jsonPrimitive.content
-        return Jsoup.parseBodyFragment(html)
-    }
-
-    private fun OkHttpClient.Builder.ignoreAllSSLErrors(): OkHttpClient.Builder {
-        val naiveTrustManager = @SuppressLint("CustomX509TrustManager")
-        object : X509TrustManager {
-            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-            override fun checkClientTrusted(certs: Array<X509Certificate>, authType: String) = Unit
-            override fun checkServerTrusted(certs: Array<X509Certificate>, authType: String) = Unit
-        }
-
-        val insecureSocketFactory = SSLContext.getInstance("TLSv1.2").apply {
-            val trustAllCerts = arrayOf<TrustManager>(naiveTrustManager)
-            init(null, trustAllCerts, SecureRandom())
-        }.socketFactory
-
-        sslSocketFactory(insecureSocketFactory, naiveTrustManager)
-        hostnameVerifier { _, _ -> true }
-        return this
-    }
-
-    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .ignoreAllSSLErrors()
-        .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("10.0.2.2", 8080)))
-        .build()
 }

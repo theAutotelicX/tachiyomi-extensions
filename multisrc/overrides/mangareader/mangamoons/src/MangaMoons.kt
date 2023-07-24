@@ -8,13 +8,9 @@ import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.util.asJsoup
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
-import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.TextNode
@@ -24,7 +20,7 @@ import rx.Observable
 open class MangaMoons(
     override val lang: String,
 ) : MangaReader() {
-    override val name = "Mangamoons"
+    override val name = "MangaMoons"
 
     override val baseUrl = "https://manga-moons.net"
 
@@ -36,7 +32,7 @@ open class MangaMoons(
         GET("$baseUrl/manga/?order=update&page=$page", headers)
 
     override fun popularMangaRequest(page: Int) =
-        GET("$baseUrl/manga/?sort=popular&page=$page", headers)
+        GET("$baseUrl/manga/?order=popular&page=$page", headers)
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         val urlBuilder = baseUrl.toHttpUrl().newBuilder()
@@ -105,21 +101,25 @@ open class MangaMoons(
     }
 
     override fun mangaDetailsParse(document: Document) = SManga.create().apply {
-        val root = document.selectFirst(".bsx")!!
-        val mangaTitle = root.selectFirst(Evaluator.Tag("h2"))!!.ownText()
+        val root = document.selectFirst(".main-info")!!
+
+        val mangaTitle = root.selectFirst(Evaluator.Tag("h1"))!!.ownText()
         title = mangaTitle
         description = root.run {
-            val description = selectFirst(Evaluator.Class("description"))!!.ownText()
-            when (val altTitle = selectFirst(Evaluator.Class("manga-name-or"))!!.ownText()) {
-                "", mangaTitle -> description
-                else -> "$description\n\nAlternative Title: $altTitle"
+            val description = selectFirst(Evaluator.Tag("h2"))!!.ownText()
+            val altTitleElement = selectFirst(Evaluator.Class("alternative"))
+            val altTitle = altTitleElement?.ownText() ?: ""
+            if (altTitle.isBlank() || altTitle == mangaTitle) {
+                description
+            } else {
+                "$description\n\nAlternative Title: $altTitle"
             }
         }
         thumbnail_url = root.selectFirst(Evaluator.Tag("img"))!!.attr("src")
-        genre = root.selectFirst(Evaluator.Class("genres"))!!.children().joinToString { it.ownText() }
-        for (item in root.selectFirst(Evaluator.Class("anisc-info"))!!.children()) {
-            if (item.hasClass("item").not()) continue
-            when (item.selectFirst(Evaluator.Class("item-head"))!!.ownText()) {
+        genre = root.selectFirst(Evaluator.Class("mgen"))!!.children().joinToString { it.ownText() }
+        for (item in root.selectFirst(Evaluator.Class("tsinfo"))!!.children()) {
+            if (item.hasClass("imptdt").not()) continue
+            when (item.selectFirst(Evaluator.Class("imptdt"))!!.ownText()) {
                 "Authors:" -> item.parseAuthorsTo(this)
                 "Status:" -> status = when (item.selectFirst(Evaluator.Class("name"))!!.ownText()) {
                     "Finished" -> SManga.COMPLETED
@@ -173,8 +173,6 @@ open class MangaMoons(
             Note,
             TypeFilter(),
             StatusFilter(),
-            RatingFilter(),
-            ScoreFilter(),
             StartDateFilter(),
             EndDateFilter(),
             SortFilter(),

@@ -17,10 +17,13 @@ import kotlin.math.min
 object ImageInterceptor : Interceptor {
 
     private val memo = hashMapOf<Int, IntArray>()
+    private const val replaceOldUrl = "manga-moons.nethttps//"
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val response = chain.proceed(request)
+        val url = request.url.toUri().toString().replace(replaceOldUrl, "") // Fix the URL
+
+        val response = chain.proceed(request.newBuilder().url(url).build()) // Use the fixed URL in the request
 
         if (request.url.fragment != SCRAMBLED) return response
 
